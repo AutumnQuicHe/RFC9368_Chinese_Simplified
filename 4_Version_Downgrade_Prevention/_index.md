@@ -25,18 +25,42 @@ rank: "h1"
 当服务端解析完客户端的版本信息时，{{< req_level MUST >}}校验客户端选定版本是否与连接当前使用版本一致。
 如果两者不一致，服务端{{< req_level MUST >}}以版本协商错误为由关闭连接。
 
-In the specific case of QUIC version 1, the server determines that version 1 is in use by observing that the Version field of the first Long Header packet it receives is set to 0x00000001. Subsequently, if the server receives the client's Version Information over QUIC version 1 (as indicated by the Version field of the Long Header packets that carried the transport parameters) and the client's Chosen Version is not set to 0x00000001, the server MUST close the connection with a version negotiation error.
+在QUIC版本1的特定情况下，服务端通过观察其收到的首个长包头包的版本字段值为`0x00000001`从而确认当前连接使用的是QUIC版本1。
+接下来，如果服务端通过QUIC版本1连接收到客户端的版本信息（通过长包头包版本字段携带的传输参数）中客户端的选定版本未设置为`0x00000001`，服务端{{< req_level MUST >}}以版本协商错误关闭连接。
 
-Servers MAY complete the handshake even if the Version Information is missing. Clients MUST NOT complete the handshake if they are reacting to a Version Negotiation packet and the Version Information is missing, but MAY do so otherwise.
+即使版本信息缺失，服务端也{{< req_level MAY >}}完成握手。
+如果客户端处理版本协商包时缺少版本信息，那么其{{< req_level MUST_NOT >}}能完成握手，但是在其他情况下是{{< req_level MAY >}}的。
 
-If a client receives Version Information where the server's Chosen Version was not sent by the client as part of its Available Versions, the client MUST close the connection with a version negotiation error. If a client has reacted to a Version Negotiation packet and the server's Version Information was missing, the client MUST close the connection with a version negotiation error.
+如果客户端收到的版本信息中服务端的选定版本不在客户端发送的可选版本中，那么客户端{{< req_level MUST >}}以版本协商错误关闭连接。
+如果客户端处理了版本协商包而其中缺乏版本信息，那么客户端{{< req_level MUST >}}以版本协商错误关闭连接。
 
-If the client received and acted on a Version Negotiation packet, the client MUST validate the server's Available Versions field. The Available Versions field is validated by confirming that the client would have attempted the same version with knowledge of the versions the server supports. That is, the client would have selected the same version if it received a Version Negotiation packet that listed the versions in the server's Available Versions field, plus the Negotiated Version. If the client would have selected a different version, the client MUST close the connection with a version negotiation error. In particular, if the client reacted to a Version Negotiation packet and the server's Available Versions field is empty, the client MUST close the connection with a version negotiation error. These connection closures prevent an attacker from being able to use forged Version Negotiation packets to force a version downgrade.
+如果客户端收到且执行了版本协商包，那么客户端{{< req_level MUST >}}验证服务端的可选版本字段。
+验证可选版本字段通过确认如果客户端知道服务端支持的版本，则其将尝试同样的版本。
+就是说，如果已经收到版本协商包，其中列出了服务端可选版本字段支持的版本，包括协商版本，则客户端将选择相同的版本。
+如果客户端将选择不同的版本，则其{{< req_level MUST >}}以版本协商错误关闭连接。
+特别是，如果客户端处理版本协商包时发现服务端的可选版本字段是空的，则其{{< req_level MUST >}}以版本协商错误关闭连接。
+这些连接关闭使得攻击者不能使用伪造的版本协商包强制版本降级。
 
-As an example, let's assume a client supports hypothetical QUIC versions 10, 12, and 14 with a preference for higher versions. The client initiates a connection attempt with version 12. Let's explore two independent example scenarios:
+例如，假设客户端支持QUIC版本10、12和14，并优先支持较高的版本。
+客户端以版本12发起建联尝试。
+接下来探讨两个独立的示例场景：
 
-In the first scenario, the server supports versions 10, 13, and 14, but only 13 and 14 are Fully Deployed (see Section 5). The server sends a Version Negotiation packet with versions 10, 13, and 14. This triggers an incompatible version negotiation, and the client initiates a new connection with version 14. Then, the server's Available Versions field contains 13 and 14. In that scenario, the client would have also picked 14 if it had received a Version Negotiation packet with versions 13 and 14; therefore, the handshake succeeds using Negotiated Version 14.
-In the second scenario, the server supports versions 10, 13, and 14, and they are all Fully Deployed. However, the attacker forges a Version Negotiation packet with versions 10 and 13. This triggers an incompatible version negotiation, and the client initiates a new connection with version 10. Then, the server's Available Versions field contains 10, 13, and 14. In that scenario, the client would have picked 14 instead of 10 if it had received a Version Negotiation packet with versions 10, 13, and 14; therefore, the client aborts the handshake with a version negotiation error.
-This validation of Available Versions is not sufficient to prevent downgrade. Downgrade prevention also depends on the client ignoring Version Negotiation packets that contain the Original Version (see Section 2.1).
+- 在第一个场景中，服务端支持版本10、13和14，但是只有版本13和14是完整部署的（详见[第2章]()）。
+服务端发送了携带版本10、13和14的版本协商包。
+触发了一个非兼容版本协商，且客户端以创建了基于版本14的新连接。
+然后，服务端的可选版本字段包含13和14。
+在该场景中，如果客户端收到了包含版本10、13和14的版本协商包，客户端仍然会选择版本14；因此，握手以版本14成功完成。
 
-After the process of version negotiation described in this document completes, the version in use for the connection is the version that the server sent in the Chosen Version field of its Version Information. That remains true even if other versions were used in the Version field of long headers at any point in the lifetime of the connection. In particular, since the client can be made aware of the Negotiated Version by the QUIC long header version during compatible version negotiation (see Section 2.3), clients MUST validate that the server's Chosen Version is equal to the Negotiated Version; if they do not match, the client MUST close the connection with a version negotiation error. This prevents an attacker's ability to influence version negotiation by forging the long header Version field.
+- 在第二个场景中，服务端支持版本10、13和14，且它们都进行了完整部署。
+然而，攻击者伪造包含版本10和13的版本协商包。
+触发了一个非兼容版本协商，且客户端以创建了基于版本10的新连接。
+然后，服务端的可选版本字段包含版本10、13和14。
+在该场景中，如果客户端收到了包含版本10、13和14的版本协商包，客户端会选择版本14；因此，客户端以版本协商错误中止握手过程。
+
+这种对可选版本的验证不足以防范降级攻击。
+防范降级攻击还需要客户端忽略包含原始版本的版本协商包（详见[第2.1章]()）。
+
+在本文描述的版本协商过程完成后，连接使用的版本将是服务端在其版本信息的选定版本字段中提供的版本。
+即使在连接生命周期中任何时刻有其他长包头的版本字段使用过其他的版本，这一点也是成立的。
+特别是，由于客户端可能通过QUIC长包头关注着兼容版本协商期间的协商版本（详见[第2.3章]()），客户端{{< req_level MUST >}}验证服务端的选定版本是否等于协商版本；如果两者不一致，客户端{{< req_level MUST >}}以版本协商错误关闭连接。
+这阻止了攻击者通过伪造长包头的版本字段影响版本协商。
